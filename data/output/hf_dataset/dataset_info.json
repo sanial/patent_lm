@@ -1,0 +1,36 @@
+{
+  "citation": "",
+  "description": "",
+  "features": {
+    "patent_id": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "image": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "masks_path": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "poses": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "shapes": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "caption": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "cpc": {
+      "dtype": "string",
+      "_type": "Value"
+    }
+  },
+  "homepage": "",
+  "license": ""
+}

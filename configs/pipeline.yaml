@@ -1,0 +1,48 @@
+paths:
+  # Expected format: one JSON object per line.
+  # Required keys: patent_id, views.front
+  raw_manifest: data/impact_manifest.jsonl
+  work_dir: data/work
+  output_dir: data/output
+
+filter:
+  # Keep only rows with at least one CPC code starting with these prefixes.
+  # IMPACT sample/class labels are US design classes (for example D12209), not CPC.
+  # Leave empty to avoid filtering by prefix during first pass.
+  target_cpc_prefixes: []
+  max_samples: 500
+
+masks:
+  min_component_area: 300
+  workers: 4
+
+pose:
+  use_colmap: false
+  colmap_bin: colmap
+  fixed_depth: 0.3
+  workers: 4
+
+shape:
+  method: clip_retrieval   # primitive | clip_retrieval
+  # Used only if method=clip_retrieval
+  shapenet_embeddings_npy: data/shapenet_proxy/shapenet_embeddings.npy
+  shapenet_mesh_index_json: data/shapenet_proxy/shapenet_mesh_index.json
+  clip_model_name: clip-ViT-B-32
+  workers: 4
+
+packaging:
+  build_hf_dataset: true
+  hf_dataset_dir: data/output/hf_dataset
+  output_jsonl: data/output/patent_3d_supervision.jsonl
+
+runtime:
+  max_retries: 2
+
+vlm_3d:
+  vllm_endpoint: "" # Using google-genai API directly
+  model_name: "gemini-2.5-flash"
+  optimization_steps: 100
+  num_candidates: 3
+  loss_weights:
+    silhouette: 1.0
+    symmetry: 0.5

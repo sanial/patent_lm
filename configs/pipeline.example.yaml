@@ -1,0 +1,38 @@
+paths:
+  # Expected format: one JSON object per line.
+  # Required keys: patent_id, views.front
+  raw_manifest: data/impact_manifest.jsonl
+  work_dir: data/work
+  output_dir: data/output
+
+filter:
+  # Keep only rows with at least one CPC code starting with these prefixes.
+  # Example: furniture design patents.
+  target_cpc_prefixes: ["A47"]
+  max_samples: 500
+
+masks:
+  min_component_area: 300
+  workers: 1
+
+pose:
+  use_colmap: false
+  colmap_bin: colmap
+  fixed_depth: 0.3
+  workers: 1
+
+shape:
+  method: primitive   # primitive | clip_retrieval
+  # Used only if method=clip_retrieval
+  shapenet_embeddings_npy: ""
+  shapenet_mesh_index_json: ""
+  clip_model_name: clip-ViT-B-32
+  workers: 1
+
+packaging:
+  build_hf_dataset: true
+  hf_dataset_dir: data/output/hf_dataset
+  output_jsonl: data/output/patent_3d_supervision.jsonl
+
+runtime:
+  max_retries: 2

@@ -1,0 +1,15 @@
+[shapes] filtered to patent_id(s)=['D0908314'] (1 rows)
+art3d_prepare:   0%|          | 0/1 [00:00<?, ?it/s]Preparing Art3D job for D0908314
+  [art3d] no cleaned_figure_path; falling back to views.front: data/external/IMPACT/Sample data/USD0908314-20210126/USD0908314-20210126-D00000.TIF
+art3d_prepare: 100%|##########| 1/1 [00:56<00:00, 56.94s/it]art3d_prepare: 100%|##########| 1/1 [00:56<00:00, 56.95s/it]
+[shapes/art3d] reconstructing 1 meshes via batched SF3D ...
+[sf3d-runner] launching: c:\Users\Sunny\OneDrive\Documents\patent-3d-viewer\external\stable-fast-3d\.venv\Scripts\python.exe c:\Users\Sunny\OneDrive\Documents\patent_lm\scripts\run_sf3d_external.py --jobs C:\Users\Sunny\AppData\Local\Temp\tmpl94q45yr.json --device cuda
+[sf3d-ext] device=cuda
+[sf3d-ext] loading model stabilityai/stable-fast-3d ...
+c:\Users\Sunny\OneDrive\Documents\patent-3d-viewer\external\stable-fast-3d\.venv\Lib\site-packages\timm\models\layers\__init__.py:49: FutureWarning: Importing from timm.models.layers is deprecated, please import via timm.layers
+  warnings.warn(f"Importing from {__name__} is deprecated, please import via timm.layers", FutureWarning)
+[sf3d-ext] job 1/1: C:\Users\Sunny\OneDrive\Documents\patent_lm\data\work\vlm_3d\proxies\D0908314\proxy_2.png
+After Remesh 14388 28772
+[sf3d-ext] job 1/1 done -> C:\Users\Sunny\OneDrive\Documents\patent_lm\data\work\vlm_3d\reconstructed_meshes\D0908314.glb
+[sf3d-ext] RESULTS=[{"input": "C:\\Users\\Sunny\\OneDrive\\Documents\\patent_lm\\data\\work\\vlm_3d\\proxies\\D0908314\\proxy_2.png", "output": "C:\\Users\\Sunny\\OneDrive\\Documents\\patent_lm\\data\\work\\vlm_3d\\reconstructed_meshes\\D0908314.glb", "ok": true, "error": null}]
+[shapes/art3d] wrote 1 rows -> data\work\shaped_manifest.jsonl
