@@ -9,6 +9,14 @@ from .io_utils import read_jsonl
 
 
 def _dedupe_preserve(seq: list[str]) -> list[str]:
+    """Return ``seq`` with duplicates removed while preserving first-seen order.
+
+    Args:
+        seq: Input sequence of strings.
+
+    Returns:
+        Deduplicated list with original ordering.
+    """
     seen: set[str] = set()
     out: list[str] = []
     for item in seq:
@@ -20,6 +28,20 @@ def _dedupe_preserve(seq: list[str]) -> list[str]:
 
 
 def _extract_proxy_mesh_catalog(manifest_rows: list[dict], max_meshes: int) -> list[dict]:
+    """Build the proxy mesh catalog used to seed the ShapeNet index.
+
+    Collects unique CPC labels (or titles, when no CPCs are present) from
+    the manifest, optionally truncates to ``max_meshes`` entries, and emits
+    one record per label with a synthetic ``mesh_id`` and a text caption
+    used to compute its CLIP-text embedding.
+
+    Args:
+        manifest_rows: Raw manifest rows to mine for labels.
+        max_meshes: Cap on entries (0 = no cap).
+
+    Returns:
+        List of ``{"mesh_id": ..., "text": ...}`` dicts.
+    """
     labels: list[str] = []
     for row in manifest_rows:
         cpc = row.get("cpc")
@@ -55,6 +77,27 @@ def build_proxy_shape_index_from_manifest(
     clip_model_name: str,
     max_meshes: int = 0,
 ) -> int:
+    """Compute and persist a CLIP-text proxy shape index from the manifest.
+
+    Encodes the synthetic per-label captions with a Sentence-Transformers
+    CLIP-style model and saves the resulting embedding matrix plus a
+    parallel mesh-id list. This index is what the ``shape`` stage queries
+    when ``method = clip_retrieval``.
+
+    Args:
+        manifest_jsonl: Source manifest JSONL.
+        output_embeddings_npy: Destination ``.npy`` matrix path.
+        output_mesh_index_json: Destination JSON path for the mesh-id list.
+        clip_model_name: Sentence-Transformers model identifier.
+        max_meshes: Cap on entries (0 = no cap).
+
+    Returns:
+        Number of mesh entries written.
+
+    Raises:
+        ValueError: If no labels could be extracted from the manifest.
+        RuntimeError: If ``sentence-transformers`` is not installed.
+    """
     rows = read_jsonl(manifest_jsonl)
     catalog = _extract_proxy_mesh_catalog(rows, max_meshes=max_meshes)
     if not catalog:

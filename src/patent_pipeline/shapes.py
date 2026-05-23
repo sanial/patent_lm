@@ -14,6 +14,18 @@ _CACHE_LOCK = threading.Lock()
 
 
 def _primitive_shapes_from_poses(poses: list[dict]) -> list[dict]:
+    """Convert pose pseudo-labels into box primitives.
+
+    Used when ``shape.method = primitive``. Each pose's normalized bbox
+    dimensions become a ``box`` shape with the same width/height and a
+    fixed depth from the pose record.
+
+    Args:
+        poses: List of pose dicts produced by the pose stage.
+
+    Returns:
+        List of shape dicts (``type='box'``, ``source='primitive_fitting'``).
+    """
     shapes: list[dict] = []
     for pose in poses:
         width = float(pose.get("width", 0.1))
@@ -32,6 +44,24 @@ def _primitive_shapes_from_poses(poses: list[dict]) -> list[dict]:
 
 
 def _clip_retrieval_stub(record: dict, emb_path: str, mesh_index_path: str) -> list[dict]:
+    """Deterministic placeholder for CLIP-based ShapeNet retrieval.
+
+    Loads the embedding matrix and mesh index to validate that they exist,
+    then assigns mesh index 0 to every instance. Kept around so the JSONL
+    schema is stable while real retrieval is being wired up.
+
+    Args:
+        record: Manifest row containing ``poses``.
+        emb_path: Path to ShapeNet embedding ``.npy`` matrix.
+        mesh_index_path: Path to JSON list of ShapeNet mesh ids parallel
+            to the embedding rows.
+
+    Returns:
+        List of shape dicts (``type='mesh'``, ``source='clip_retrieval_stub'``).
+
+    Raises:
+        FileNotFoundError: If either resource file is missing.
+    """
     emb_file = Path(emb_path)
     mesh_file = Path(mesh_index_path)
     if not emb_file.exists() or not mesh_file.exists():
@@ -67,17 +97,45 @@ def _clip_retrieval_stub(record: dict, emb_path: str, mesh_index_path: str) -> l
 
 
 def _normalize_rows(matrix: np.ndarray) -> np.ndarray:
+    """L2-normalize each row of a 2D matrix (with epsilon guarding).
+
+    Args:
+        matrix: 2D array of shape ``[N, D]``.
+
+    Returns:
+        Same-shape array whose rows have unit L2 norm. Zero-norm rows are
+        clipped to a tiny epsilon to avoid division by zero.
+    """
     norms = np.linalg.norm(matrix, axis=1, keepdims=True)
     norms = np.clip(norms, 1e-12, None)
     return matrix / norms
 
 
 def _normalize_vec(vec: np.ndarray) -> np.ndarray:
+    """L2-normalize a single vector with epsilon guarding.
+
+    Args:
+        vec: 1D array.
+
+    Returns:
+        Same-shape unit vector.
+    """
     denom = max(float(np.linalg.norm(vec)), 1e-12)
     return vec / denom
 
 
 def _crop_from_mask(image: np.ndarray, mask: np.ndarray) -> Image.Image | None:
+    """Crop the bounding box of a binary mask from an RGB image.
+
+    Args:
+        image: RGB image as a ``(H, W, 3)`` ndarray.
+        mask: Binary mask as a ``(H, W)`` ndarray; non-zero pixels define
+            the region of interest.
+
+    Returns:
+        A PIL ``Image`` cropped to the mask's bounding box, or ``None``
+        when the mask is empty.
+    """
     ys, xs = np.where(mask > 0)
     if len(xs) == 0 or len(ys) == 0:
         return None
@@ -95,6 +153,28 @@ def _clip_retrieval_real(
     mesh_index_path: str,
     clip_model_name: str,
 ) -> list[dict]:
+    """Retrieve nearest ShapeNet meshes by CLIP image similarity.
+
+    Encodes each per-instance crop of the front view with a Sentence-
+    Transformers CLIP-style model, then picks the most similar row of the
+    pre-built ShapeNet embedding matrix.
+
+    Args:
+        record: Manifest row with ``views.front`` and ``masks_path``.
+        emb_path: Path to ShapeNet embedding ``.npy`` matrix.
+        mesh_index_path: Path to JSON list of mesh ids parallel to the
+            embeddings.
+        clip_model_name: Sentence-Transformers model identifier.
+
+    Returns:
+        List of shape dicts (``type='mesh'``, ``source='clip_retrieval'``)
+        with a ``score`` field. Empty list when the front view or masks
+        are missing.
+
+    Raises:
+        FileNotFoundError: If the embedding or mesh index file is missing.
+        RuntimeError: If ``sentence-transformers`` is not installed.
+    """
     emb_file = Path(emb_path)
     mesh_file = Path(mesh_index_path)
     if not emb_file.exists() or not mesh_file.exists():
@@ -150,6 +230,25 @@ def _clip_retrieval_real(
 
 
 def _get_shape_index(emb_file: Path, mesh_file: Path) -> tuple[np.ndarray, list[str]]:
+    """Load (and cache) the ShapeNet embedding matrix and mesh-id list.
+
+    Validates that the JSON index is a non-empty list, the ``.npy`` is 2D,
+    and the row count matches. Embeddings are L2-normalized once on load so
+    subsequent retrieval is a single matrix multiply.
+
+    Args:
+        emb_file: Path to the embedding ``.npy`` file.
+        mesh_file: Path to the mesh-id JSON list.
+
+    Returns:
+        Tuple ``(embeddings, mesh_index)`` where ``embeddings`` is a
+        row-normalized ``(N, D)`` matrix and ``mesh_index`` is the parallel
+        list of mesh ids.
+
+    Raises:
+        ValueError: If the mesh index is empty or shape mismatches the
+            embedding rows.
+    """
     cache_key = (str(emb_file.resolve()), str(mesh_file.resolve()))
     with _CACHE_LOCK:
         cached = _INDEX_CACHE.get(cache_key)
@@ -174,6 +273,17 @@ def _get_shape_index(emb_file: Path, mesh_file: Path) -> tuple[np.ndarray, list[
 
 
 def _get_clip_model(clip_model_name: str):
+    """Load (and cache) a Sentence-Transformers CLIP-style model by name.
+
+    Args:
+        clip_model_name: Hugging Face / Sentence-Transformers identifier.
+
+    Returns:
+        A loaded ``SentenceTransformer`` instance.
+
+    Raises:
+        RuntimeError: If ``sentence-transformers`` is not installed.
+    """
     with _CACHE_LOCK:
         model = _MODEL_CACHE.get(clip_model_name)
         if model is None:
@@ -187,6 +297,19 @@ def _get_clip_model(clip_model_name: str):
 
 
 def prewarm_clip_resources(emb_path: str, mesh_index_path: str, clip_model_name: str) -> None:
+    """Eagerly load the ShapeNet index and CLIP model into module caches.
+
+    Useful before launching a multi-record loop so the first record does
+    not pay the model-load cost.
+
+    Args:
+        emb_path: Path to the ShapeNet embedding ``.npy`` matrix.
+        mesh_index_path: Path to the mesh-id JSON list.
+        clip_model_name: Sentence-Transformers model identifier.
+
+    Raises:
+        FileNotFoundError: If the embedding or mesh index file is missing.
+    """
     emb_file = Path(emb_path)
     mesh_file = Path(mesh_index_path)
     if not emb_file.exists() or not mesh_file.exists():
@@ -205,6 +328,25 @@ def build_shapes_for_record(
     mesh_index_path: str,
     clip_model_name: str,
 ) -> dict:
+    """Attach a ``shapes`` field to a manifest row.
+
+    Dispatches to either box-primitive fitting or CLIP-based ShapeNet
+    retrieval based on ``method``.
+
+    Args:
+        record: Manifest row (must already have ``poses``).
+        method: Either ``"primitive"`` or ``"clip_retrieval"``.
+        emb_path: ShapeNet embeddings ``.npy`` path (used only for
+            ``clip_retrieval``).
+        mesh_index_path: ShapeNet mesh-id JSON path.
+        clip_model_name: Sentence-Transformers model name.
+
+    Returns:
+        A shallow copy of ``record`` extended with a ``shapes`` list.
+
+    Raises:
+        ValueError: If ``method`` is not one of the supported values.
+    """
     updated = dict(record)
     poses = updated.get("poses", [])
     if not isinstance(poses, list):

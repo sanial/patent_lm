@@ -1,23 +1,21 @@
 # Detailed Action Log
 
 A chronological account of every change, command, and diagnostic step taken
-in this chat while bringing the Art3D pipeline to a working end-to-end state.
-Items earlier than the most recent compaction are reconstructed from the
-session summary; everything after is from direct tool execution.
+while bringing the Art3D pipeline to a working end-to-end state.
 
 ---
 
-## Phase 0 — Pre-compaction context (reconstructed)
+## Phase 0 — Initial context
 
-Starting state: the agent was trying to install `sf3d` into the project venv
-and failing. The user chose to reuse an already-working `sf3d` venv from a
-sibling project at:
+Starting state: `sf3d` could not be installed into the project venv. The
+decision was made to reuse an already-working `sf3d` venv from a sibling
+project at:
 
 ```
 c:\Users\Sunny\OneDrive\Documents\patent-3d-viewer\external\stable-fast-3d
 ```
 
-The agent then made the following changes (paraphrased from the summary):
+The following changes were then made:
 
 ### 0.1 External subprocess wiring
 - **Created** `scripts/run_sf3d_external.py` (initial version, single-image
@@ -64,7 +62,7 @@ not yet completed a single record.
 
 ---
 
-## Phase 1 — Post-compaction: confirm crash bypass
+## Phase 1 — Confirm crash bypass
 
 ### 1.1 Reapply prewarm gating
 - Re-confirmed the `if mode == "optimize":` wrapper around

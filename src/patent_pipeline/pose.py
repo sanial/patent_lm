@@ -10,6 +10,24 @@ from .io_utils import ensure_dir
 
 
 def _run_colmap_if_possible(record: dict, colmap_bin: str, workspace_root: Path) -> tuple[bool, str]:
+    """Best-effort attempt to run COLMAP automatic reconstruction.
+
+    Patent figures rarely have enough overlapping views for structure-from-
+    motion, so this helper degrades gracefully when COLMAP cannot run or
+    exits non-zero. Used as a feasibility probe rather than a hard
+    dependency.
+
+    Args:
+        record: Manifest row (uses the ``views`` dict and ``patent_id``).
+        colmap_bin: Path or command name of the COLMAP executable.
+        workspace_root: Parent directory under which per-patent COLMAP
+            workspaces are created.
+
+    Returns:
+        A ``(ok, info)`` tuple. ``ok`` is True only when COLMAP exited
+        with code 0. ``info`` is the workspace path on success or a
+        truncated error message / status string on failure.
+    """
     views = record.get("views", {})
     if not isinstance(views, dict):
         return False, "No views dict."
@@ -37,6 +55,27 @@ def _run_colmap_if_possible(record: dict, colmap_bin: str, workspace_root: Path)
 
 
 def _poses_from_masks(front_image_path: Path, masks_path: Path, fixed_depth: float) -> list[dict]:
+    """Derive 2.5D pose pseudo-labels from instance masks on the front view.
+
+    For each mask, computes the axis-aligned bounding box and emits a pose
+    record with normalized ``(x, y)`` center, normalized ``width`` and
+    ``height``, a placeholder ``z = -1.0``, and a configurable
+    ``depth``/``rotation``.
+
+    Args:
+        front_image_path: Path to the patent's front view image.
+        masks_path: Path to a ``.npz`` archive whose ``masks`` array has
+            shape ``(N, H, W)``.
+        fixed_depth: Constant depth value to assign to every pose since
+            real depth is unknown from a single line drawing.
+
+    Returns:
+        List of pose dicts with normalized geometry, ready to be attached
+        to the manifest row.
+
+    Raises:
+        ValueError: If the front image cannot be read.
+    """
     image = cv2.imread(str(front_image_path), cv2.IMREAD_GRAYSCALE)
     if image is None:
         raise ValueError(f"Failed to read image: {front_image_path}")
@@ -83,6 +122,26 @@ def build_poses_for_record(
     colmap_workspace_root: str | Path,
     fixed_depth: float,
 ) -> dict:
+    """Compute pose pseudo-labels for one manifest row.
+
+    Optionally probes COLMAP (recording the outcome) and then always
+    derives mask-based 2.5D poses for downstream stages.
+
+    Args:
+        record: Manifest row with ``views`` and ``masks_path`` populated.
+        use_colmap: If True, attempt COLMAP first and record its status.
+        colmap_bin: COLMAP executable path/name.
+        colmap_workspace_root: Directory to host per-patent COLMAP
+            workspaces.
+        fixed_depth: Constant depth passed to :func:`_poses_from_masks`.
+
+    Returns:
+        A shallow copy of ``record`` augmented with ``poses`` (always) and,
+        when ``use_colmap`` is True, ``colmap_ok``/``colmap_info``.
+
+    Raises:
+        FileNotFoundError: If the front view or masks archive is missing.
+    """
     updated = dict(record)
 
     if use_colmap:

@@ -1,9 +1,20 @@
 from __future__ import annotations
 
 def schema_to_diffusion_prompt(constraint_schema: dict) -> str:
-    """
-    Convert Gemma ConstraintSchema to a diffusion prompt.
-    Produces object-centric, studio-style prompt for best SF3D/Trellis compatibility.
+    """Convert a Gemma ``ConstraintSchema`` dict into a diffusion-style prompt.
+
+    Picks up to three part names, two material hints, and two geometry
+    hints from the schema and stitches them into an object-centric,
+    studio-style prompt that works well with SF3D / Trellis style
+    image-to-3D models.
+
+    Args:
+        constraint_schema: Dict produced by the VLM parser; should contain
+            ``parts`` (list of part dicts), and optionally
+            ``geometry_hints``.
+
+    Returns:
+        A single-line prompt string suitable for a text-to-image model.
     """
     parts = constraint_schema.get("parts", [])
     part_names = [p.get("name", p.get("primitive_type", "object")) for p in parts]

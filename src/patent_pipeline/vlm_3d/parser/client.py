@@ -15,6 +15,24 @@ def parse_constraints(
     caption: str,
     model_name: str = "gemini-1.5-pro",
 ) -> ConstraintSchema:
+    """Extract a 3D constraint schema from patent figures via a VLM.
+
+    Sends the provided figures and caption to the named Gemini model with
+    a JSON-schema response constraint so the reply parses straight into a
+    :class:`ConstraintSchema`.
+
+    Args:
+        image_paths: List of patent figure paths; missing files are
+            silently skipped.
+        caption: Patent caption or title to give the model textual context.
+        model_name: Gemini model identifier (default ``gemini-1.5-pro``).
+
+    Returns:
+        A populated :class:`ConstraintSchema`.
+
+    Raises:
+        ValueError: If the response could not be coerced into the schema.
+    """
     
     api_key = os.environ.get("GEMINI_API_KEY", "")
     client = genai.Client(api_key=api_key)

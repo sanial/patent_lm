@@ -20,9 +20,27 @@ def augment_figure_with_gemini(
     diffusion_prompt: str,
     n_candidates: int = 4,
 ) -> list[Image.Image]:
-    """
-    Generates N proxy images from a cleaned patent figure using the Gemini
-    image-generation API. Acts as a stand-in for a local ControlNet pipeline.
+    """Generate photorealistic proxy candidates from a patent line drawing.
+
+    Sends the cleaned figure together with a textual description to the
+    Gemini image-generation model (``gemini-2.5-flash-image``) and returns
+    every decodable PIL image in the response. Acts as a stand-in for a
+    local ControlNet pipeline.
+
+    Args:
+        cleaned_figure_path: Path to the annotation-removed line drawing.
+        diffusion_prompt: Object/material/geometry description produced by
+            :func:`schema_to_diffusion_prompt`.
+        n_candidates: Number of independent generation calls to make.
+
+    Returns:
+        List of generated proxy images (length ≤ ``n_candidates``; entries
+        for failed candidates are silently skipped).
+
+    Raises:
+        ImportError: If ``google-genai`` is not installed.
+        ValueError: If the ``GEMINI_API_KEY`` environment variable is
+            missing.
     """
     if genai is None:
         raise ImportError("google-genai package is required to use the Gemini augmentor.")

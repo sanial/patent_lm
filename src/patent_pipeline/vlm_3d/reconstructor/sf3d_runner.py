@@ -23,6 +23,13 @@ logger = logging.getLogger(__name__)
 
 
 def _build_env() -> dict:
+    """Build the subprocess environment with SF3D project root on PYTHONPATH.
+
+    Returns:
+        A copy of ``os.environ`` with the SF3D project root prepended to
+        ``PYTHONPATH`` and ``PYTHONUNBUFFERED=1`` set so the child's stdout
+        streams live.
+    """
     env = os.environ.copy()
     existing_pp = env.get("PYTHONPATH", "")
     env["PYTHONPATH"] = (
@@ -34,7 +41,18 @@ def _build_env() -> dict:
 
 
 def _stream_subprocess(command: list[str]) -> tuple[int, str]:
-    """Run command with stdout streamed to our stdout. Returns (rc, full_stdout)."""
+    """Run a command, streaming combined stdout/stderr live to our stdout.
+
+    Used so users see SF3D progress in real time instead of waiting for the
+    subprocess to finish.
+
+    Args:
+        command: Argument vector to execute.
+
+    Returns:
+        Tuple ``(returncode, full_stdout)`` where ``full_stdout`` contains
+        the concatenated output that was also echoed live.
+    """
     print(f"[sf3d-runner] launching: {' '.join(command)}", flush=True)
     proc = subprocess.Popen(
         command,
@@ -64,7 +82,29 @@ def run_sf3d_reconstruction(
     output_path: str | None = None,
     device: str = "cuda",
 ) -> str:
-    """Run SF3D on a single image. Returns the absolute output mesh path."""
+    """Run SF3D on a single image inside the external venv.
+
+    Either ``output_path`` or both ``output_dir`` + ``file_name`` must be
+    supplied. Parent directories are created on demand.
+
+    Args:
+        proxy_image_path: Path to the input image (proxy render).
+        output_dir: Directory to write the resulting ``.glb`` into.
+        file_name: Base filename (``.glb`` suffix added if missing).
+        output_path: Explicit destination ``.glb`` path; overrides
+            ``output_dir``/``file_name``.
+        device: ``"cuda"`` or ``"cpu"``.
+
+    Returns:
+        Absolute path to the resulting mesh.
+
+    Raises:
+        ValueError: If neither ``output_path`` nor the dir/name pair is
+            provided.
+        RuntimeError: If the SF3D subprocess exits non-zero.
+        FileNotFoundError: If the subprocess succeeded but the expected
+            mesh file is missing.
+    """
     if output_path is None:
         if output_dir is None or file_name is None:
             raise ValueError(

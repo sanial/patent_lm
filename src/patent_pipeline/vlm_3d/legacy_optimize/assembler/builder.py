@@ -11,6 +11,20 @@ from .primitives import (
 )
 
 def build_assembly(schema: ConstraintSchema, device: str = "cpu") -> "Meshes":
+    """Construct an initial PyTorch3D mesh assembly from a constraint schema.
+
+    Each part is instantiated as a cylinder, box, or sphere primitive,
+    transformed by its declared dimensions/position/rotation, and joined
+    into a single scene mesh.
+
+    Args:
+        schema: Parsed VLM constraint schema.
+        device: Torch device string.
+
+    Returns:
+        A :class:`pytorch3d.structures.Meshes` containing all parts; falls
+        back to a single sphere when the schema has no parts.
+    """
     meshes_list = []
     
     for part in schema.parts:

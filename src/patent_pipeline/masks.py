@@ -9,6 +9,22 @@ from .io_utils import ensure_dir
 
 
 def _extract_instances_from_line_art(image: np.ndarray, min_component_area: int) -> np.ndarray:
+    """Extract per-instance binary masks from a grayscale patent line drawing.
+
+    Thresholds the image (dark strokes on light background), runs 8-connected
+    component analysis, and emits one binary mask per component whose area
+    is at least ``min_component_area`` pixels.
+
+    Args:
+        image: Grayscale image as a 2D ``uint8`` ndarray.
+        min_component_area: Minimum pixel area for a connected component to
+            survive (filters out specks and small annotations).
+
+    Returns:
+        A 3D ``uint8`` array of shape ``(num_instances, H, W)``. When no
+        components survive, returns a zero-length stack of shape
+        ``(0, H, W)`` so downstream code can still call ``.shape``.
+    """
     # Patent line drawings are usually dark strokes on bright background.
     _, binary = cv2.threshold(image, 220, 255, cv2.THRESH_BINARY_INV)
     num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(binary, connectivity=8)
@@ -29,6 +45,31 @@ def _extract_instances_from_line_art(image: np.ndarray, min_component_area: int)
 from .vlm_3d.augmentor.preprocessor import remove_patent_annotations
 
 def build_masks_for_record(record: dict, masks_dir: str | Path, min_component_area: int) -> dict:
+    """Generate instance masks and a cleaned figure for one patent row.
+
+    Reads the row's front view, removes patent-style annotations (reference
+    numbers, leader lines) via
+    :func:`patent_pipeline.vlm_3d.augmentor.preprocessor.remove_patent_annotations`,
+    extracts per-component binary masks, and writes both artifacts to disk.
+    Returns a new row dict augmented with the resulting paths.
+
+    Args:
+        record: Manifest row containing at least ``patent_id`` and
+            ``views.front``.
+        masks_dir: Directory where ``<patent_id>_masks.npz`` will be saved.
+            The cleaned image is saved alongside under a sibling
+            ``cleaned_images/`` directory.
+        min_component_area: Pixel-area floor passed to
+            :func:`_extract_instances_from_line_art`.
+
+    Returns:
+        A shallow copy of ``record`` extended with ``masks_path``,
+        ``num_instances``, and ``cleaned_figure_path``.
+
+    Raises:
+        FileNotFoundError: If the front view file is missing.
+        ValueError: If the front view cannot be decoded by OpenCV.
+    """
     patent_id = str(record.get("patent_id", "unknown"))
     views = record.get("views", {})
     front_path = Path(str(views.get("front", "")))

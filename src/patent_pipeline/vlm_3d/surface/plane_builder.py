@@ -3,8 +3,17 @@ import trimesh
 import numpy as np
 
 def create_textured_plane(image_path: str) -> trimesh.Trimesh:
-    """
-    Creates a simple plane mesh and applies the given image as a texture.
+    """Build a thin trimesh box and apply ``image_path`` as its base color.
+
+    Used by the surface-pattern loop to represent 2D textile/ornament
+    patents as a textured planar mesh.
+
+    Args:
+        image_path: Path to the image used as the PBR base-color texture.
+
+    Returns:
+        A :class:`trimesh.Trimesh` (a thin box) with UV coordinates and
+        either a PBR or color visual attached.
     """
     # Create a simple plane mesh
     plane = trimesh.creation.box(extents=[1, 1, 0.01])

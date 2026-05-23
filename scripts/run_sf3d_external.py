@@ -25,6 +25,14 @@ from PIL import Image
 
 
 def _load_model(device: str):
+    """Load the SF3D model and a fresh rembg session onto ``device``.
+
+    Args:
+        device: Torch device string (``"cuda"`` or ``"cpu"``).
+
+    Returns:
+        Tuple ``(model, rembg_session)`` ready for repeated inference.
+    """
     import rembg
     from sf3d.system import SF3D
 
@@ -42,6 +50,16 @@ def _load_model(device: str):
 
 
 def _prepare_image(path: str, rembg_session):
+    """Load an image and prepare it for SF3D (background removal + crop).
+
+    Args:
+        path: Filesystem path to the source image.
+        rembg_session: A rembg session returned by :func:`_load_model`.
+
+    Returns:
+        A PIL ``Image`` in RGBA with the background removed and the
+        foreground rescaled to ~85% of frame.
+    """
     from sf3d.utils import remove_background, resize_foreground
 
     img = Image.open(path).convert("RGBA")
@@ -51,6 +69,17 @@ def _prepare_image(path: str, rembg_session):
 
 
 def _reconstruct(model, image, device: str, output_path: str) -> None:
+    """Run a single SF3D inference and export the resulting mesh to GLB.
+
+    Uses CUDA fp16 autocast when ``device`` is a CUDA device. Creates
+    parent directories on demand.
+
+    Args:
+        model: A loaded SF3D model.
+        image: The prepared PIL image (see :func:`_prepare_image`).
+        device: Torch device string.
+        output_path: Destination ``.glb`` path.
+    """
     autocast_ctx = (
         torch.autocast(device_type="cuda", dtype=torch.float16)
         if device.startswith("cuda")
@@ -71,6 +100,19 @@ def _reconstruct(model, image, device: str, output_path: str) -> None:
 
 
 def run_single(input_image: str, output_mesh: str, device: str) -> int:
+    """Reconstruct a single image into a mesh.
+
+    Falls back to CPU if CUDA was requested but unavailable.
+
+    Args:
+        input_image: Path to the source image.
+        output_mesh: Path of the ``.glb`` to write.
+        device: ``"cuda"`` or ``"cpu"``.
+
+    Returns:
+        Process exit code (``0`` on success, ``2`` when the input file is
+        missing).
+    """
     if not os.path.exists(input_image):
         print(f"[sf3d-ext] ERROR: input not found: {input_image}", file=sys.stderr)
         return 2
@@ -85,6 +127,22 @@ def run_single(input_image: str, output_mesh: str, device: str) -> int:
 
 
 def run_batch(jobs_path: str, device: str) -> int:
+    """Run SF3D reconstruction across a batch of jobs in one process.
+
+    The model is loaded once and reused for every entry. After all jobs
+    complete, a single ``[sf3d-ext] RESULTS=<json>`` line is printed so the
+    parent process can parse per-job status. VRAM is flushed between jobs
+    on CUDA devices.
+
+    Args:
+        jobs_path: Path to a JSON file containing a list of
+            ``{"input": ..., "output": ...}`` dicts.
+        device: ``"cuda"`` or ``"cpu"``.
+
+    Returns:
+        Process exit code (``0`` on success, ``2`` when the manifest is
+        empty or invalid).
+    """
     with open(jobs_path, "r", encoding="utf-8") as f:
         jobs = json.load(f)
     if not isinstance(jobs, list) or not jobs:
@@ -133,6 +191,11 @@ def run_batch(jobs_path: str, device: str) -> int:
 
 
 def main() -> int:
+    """Parse CLI args and dispatch to :func:`run_single` or :func:`run_batch`.
+
+    Returns:
+        Process exit code suitable for ``sys.exit``.
+    """
     parser = argparse.ArgumentParser(description="Run SF3D reconstruction.")
     parser.add_argument("--input_image")
     parser.add_argument("--output_mesh")

@@ -5,6 +5,15 @@ except ImportError:
     pass
 
 def silhouette_mse(renders: torch.Tensor, target_masks: torch.Tensor) -> torch.Tensor:
+    """Mean-squared error between rendered alpha channels and target masks.
+
+    Args:
+        renders: ``[N, H, W, 4]`` tensor; alpha is channel 3.
+        target_masks: ``[N, H, W]`` tensor of binary/float target masks.
+
+    Returns:
+        Scalar tensor with the MSE loss.
+    """
     # renders: [N, H, W, 4] where alpha is renders[..., 3]
     # target_masks: [N, H, W]
     alpha = renders[..., 3]
@@ -17,6 +26,19 @@ def combined_mesh_loss(
     target_masks: torch.Tensor, 
     weights: dict
 ) -> dict:
+    """Combine silhouette MSE with mesh smoothness regularizers.
+
+    Args:
+        mesh: Current mesh under optimization.
+        renders: Multi-view render tensor (see :func:`silhouette_mse`).
+        target_masks: Target silhouettes.
+        weights: Mapping with optional keys ``silhouette``, ``laplacian``,
+            ``normal`` (defaults: 1.0, 0.1, 0.1).
+
+    Returns:
+        Dict with keys ``total``, ``silhouette``, ``laplacian``, ``normal``;
+        each value is a scalar tensor.
+    """
     
     loss_sil = silhouette_mse(renders, target_masks)
     loss_lap = mesh_laplacian_smoothing(mesh, method="uniform")

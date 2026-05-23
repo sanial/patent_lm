@@ -18,9 +18,26 @@ def select_best_proxy(
     source_figure_path: str,
     constraint_schema: dict,
 ) -> str:
-    """
-    Selects the proxy image that best matches the source patent figure using
-    the Gemini API. Returns the path to the best proxy image.
+    """Ask Gemini to pick the proxy image that best matches a patent figure.
+
+    Sends the original line art, the constraint schema, and every candidate
+    proxy to ``gemini-2.5-flash`` and parses the returned integer index.
+    Falls back to candidate 0 on any error so the pipeline never blocks.
+
+    Args:
+        proxy_image_paths: Candidate proxy image paths to choose from.
+        source_figure_path: Path to the original patent line drawing used
+            as the visual reference.
+        constraint_schema: Parsed VLM schema describing parts and material
+            hints; serialized into the prompt for context.
+
+    Returns:
+        The chosen proxy image path.
+
+    Raises:
+        ImportError: If ``google-genai`` is not installed.
+        ValueError: If ``proxy_image_paths`` is empty or
+            ``GEMINI_API_KEY`` is unset.
     """
     if genai is None:
         raise ImportError("google-genai package is required to use the proxy selector.")

@@ -5,8 +5,19 @@ SCHEMATIC_CPCS        = {"G06", "H01", "H04", "H05"}
 ASSEMBLY_CPCS         = {"F", "B", "E"}
 
 def route_patent(cpc_list: list[str]) -> str:
-    """
-    Routes a patent to a processing pipeline based on its CPC codes.
+    """Route a patent to a downstream processing pipeline based on CPC codes.
+
+    Inspects the first three normalized characters of each CPC and matches
+    them against the surface-pattern, schematic, and assembly prefix sets.
+    The first match wins; rows with no CPCs or no recognised prefix fall
+    through to ``"object"`` (the default object-reconstruction pipeline).
+
+    Args:
+        cpc_list: List of CPC code strings from the manifest row.
+
+    Returns:
+        One of ``"surface_pattern"``, ``"schematic"``, ``"assembly"`` or
+        ``"object"``.
     """
     if not cpc_list:
         return "object"  # Default if no CPC codes are provided

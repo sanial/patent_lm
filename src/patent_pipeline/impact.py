@@ -8,6 +8,19 @@ from .io_utils import ensure_dir
 
 
 def bootstrap_workspace(config_example: str | Path, config_target: str | Path, manifest_path: str | Path) -> None:
+    """Initialize a fresh workspace with a config and a seed manifest.
+
+    Copies the example YAML to the target path (if it does not already
+    exist) and writes a single placeholder row to the manifest JSONL (also
+    only if missing) so the downstream pipeline has something to chew on.
+
+    Args:
+        config_example: Source example YAML (typically
+            ``configs/pipeline.example.yaml``).
+        config_target: Destination YAML path (typically
+            ``configs/pipeline.yaml``).
+        manifest_path: Destination JSONL path for the seed manifest.
+    """
     config_example_path = Path(config_example)
     config_target_path = Path(config_target)
     manifest_out = Path(manifest_path)
@@ -30,6 +43,20 @@ def bootstrap_workspace(config_example: str | Path, config_target: str | Path, m
 
 
 def clone_impact_repo(output_root: str | Path, force: bool = False) -> Path:
+    """Clone (or re-clone) the upstream IMPACT repository.
+
+    Args:
+        output_root: Directory under which an ``IMPACT/`` clone will be
+            created.
+        force: If True and the target already exists, remove it first.
+
+    Returns:
+        Path to the cloned ``IMPACT`` directory.
+
+    Raises:
+        RuntimeError: When ``git clone`` exits non-zero; the first 1000
+            chars of stderr (or stdout) are surfaced.
+    """
     out_root = ensure_dir(output_root)
     repo_dir = out_root / "IMPACT"
     if repo_dir.exists():

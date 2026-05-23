@@ -16,6 +16,17 @@ from .reranker.scorer import rerank_candidates
 from .parser.schema import ConstraintSchema
 
 def _save_renders(renders: torch.Tensor, out_dir: Path, prefix: str) -> list[Path]:
+    """Save a batch of rendered views to disk as PNGs.
+
+    Args:
+        renders: ``[N, H, W, 4]`` float tensor in [0, 1].
+        out_dir: Output directory (created on demand).
+        prefix: Filename prefix; each render is saved as
+            ``<prefix>_view_<i>.png``.
+
+    Returns:
+        List of saved file paths in render order.
+    """
     paths = []
     out_dir.mkdir(parents=True, exist_ok=True)
     # renders: [N, H, W, 4]
@@ -33,6 +44,24 @@ def run_optimization(
     config: "Vlm3dConfig",
     work_dir: Path
 ) -> dict:
+    """Legacy differentiable-render optimization loop for one record.
+
+    Builds an initial primitive assembly from the parsed schema, renders it
+    with a silhouette renderer across four canonical cameras, scores each
+    candidate with both a numeric loss and a VLM critic, and saves the
+    best mesh as an ``.obj`` file.
+
+    Args:
+        record: Manifest row with ``patent_id`` and ``masks_path``.
+        schema: VLM-parsed constraint schema describing the parts.
+        config: VLM-3D configuration (provides ``num_candidates``,
+            ``model_name``, ``loss_weights``).
+        work_dir: Working directory for renders and final mesh outputs.
+
+    Returns:
+        A shallow copy of ``record`` augmented with ``vlm_constraints``,
+        ``best_candidate_idx``, ``critic_report``, and ``mesh_path``.
+    """
     
     device = "cuda" if torch.cuda.is_available() else "cpu"
     

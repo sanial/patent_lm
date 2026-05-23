@@ -11,6 +11,14 @@ import numpy as np
 
 
 def get_camera_rig(device: str = "cpu"):
+    """Build a four-view PyTorch3D camera rig (front, side, top, iso).
+
+    Args:
+        device: Torch device string.
+
+    Returns:
+        A :class:`FoVPerspectiveCameras` instance with batch size 4.
+    """
     # Create 4 views: front, side, top, iso
     dist = 3.0
     elev = torch.tensor([0.0, 0.0, 90.0, 30.0])
@@ -21,6 +29,16 @@ def get_camera_rig(device: str = "cpu"):
     return cameras
 
 def get_silhouette_renderer(device: str = "cpu", image_size: int = 256):
+    """Build a PyTorch3D soft-silhouette renderer paired with the 4-view rig.
+
+    Args:
+        device: Torch device string.
+        image_size: Square render resolution.
+
+    Returns:
+        A :class:`pytorch3d.renderer.MeshRenderer` configured for
+        soft-silhouette rasterization.
+    """
     cameras = get_camera_rig(device)
     
     raster_settings = RasterizationSettings(

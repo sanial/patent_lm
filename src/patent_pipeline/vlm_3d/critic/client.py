@@ -16,6 +16,24 @@ def critique_render(
     constraints: ConstraintSchema,
     model_name: str = "gemini-1.5-pro",
 ) -> CriticSchema:
+    """Score a candidate 3D rendering against its parsed constraint schema.
+
+    Sends multi-view renders plus the JSON-serialized constraints to the
+    Gemini critic and parses the structured response.
+
+    Args:
+        rendered_view_paths: Multi-view PNG/JPG renders of the candidate
+            mesh.
+        constraints: The :class:`ConstraintSchema` produced by the parser.
+        model_name: Gemini model identifier.
+
+    Returns:
+        A populated :class:`CriticSchema` with consistency, symmetry,
+        fidelity scores, issues, and a rerank score.
+
+    Raises:
+        ValueError: If the response could not be coerced into the schema.
+    """
     
     api_key = os.environ.get("GEMINI_API_KEY", "")
     client = genai.Client(api_key=api_key)

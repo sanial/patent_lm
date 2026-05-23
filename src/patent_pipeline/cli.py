@@ -25,6 +25,16 @@ from .routing import route_patent
 
 
 def _stage_paths(cfg: PipelineConfig) -> dict[str, Path]:
+    """Return the canonical per-stage JSONL paths under the work dir.
+
+    Args:
+        cfg: Loaded pipeline configuration.
+
+    Returns:
+        Mapping with keys ``filtered``, ``masked``, ``posed``, ``shaped``,
+        each pointing at the JSONL artifact written by the corresponding
+        stage.
+    """
     work_dir = ensure_dir(cfg.paths.work_dir)
     return {
         "filtered": work_dir / "filtered_manifest.jsonl",
@@ -35,6 +45,20 @@ def _stage_paths(cfg: PipelineConfig) -> dict[str, Path]:
 
 
 def _run_with_retries(func, row: dict, retries: int) -> dict:
+    """Run ``func(row)`` up to ``retries`` times, returning the first success.
+
+    Args:
+        func: Callable taking a single record dict and returning a dict.
+        row: Manifest record to pass to ``func``.
+        retries: Maximum number of attempts (clamped to >= 1).
+
+    Returns:
+        The first successful return value of ``func``.
+
+    Raises:
+        Exception: The last exception raised by ``func`` if every attempt
+            failed.
+    """
     attempts = max(retries, 1)
     last_exc: Exception | None = None
     for _ in range(attempts):
@@ -54,6 +78,24 @@ def _process_rows_with_failures(
     workers: int,
     fn,
 ) -> tuple[list[dict], list[dict]]:
+    """Apply ``fn`` to every row, collecting successes and failures separately.
+
+    Runs serially when ``workers <= 1`` (preserves input ordering for free)
+    and via :class:`ThreadPoolExecutor` otherwise, restoring input order
+    before returning. Failed rows produce a failure record with stage name,
+    patent id, error string, and a short traceback.
+
+    Args:
+        rows: Records to process.
+        stage_name: Name used in tqdm description and failure records.
+        retries: Per-row retry budget passed to :func:`_run_with_retries`.
+        workers: Thread pool size (1 = serial).
+        fn: Per-row callable returning the updated dict.
+
+    Returns:
+        Tuple ``(ok_rows, failures)`` with input-aligned ordering for the
+        successful rows.
+    """
     if workers <= 1:
         ok_rows: list[dict] = []
         failures: list[dict] = []
@@ -104,6 +146,14 @@ def _process_rows_with_failures(
 
 
 def run_filter(cfg: PipelineConfig) -> Path:
+    """Run the ``filter`` stage and write the filtered manifest JSONL.
+
+    Args:
+        cfg: Loaded pipeline configuration.
+
+    Returns:
+        Path to ``filtered_manifest.jsonl``.
+    """
     stage = _stage_paths(cfg)
     rows = read_jsonl(cfg.paths.raw_manifest)
     filtered = filter_records(rows, cfg.filter.target_cpc_prefixes, cfg.filter.max_samples)
@@ -113,6 +163,14 @@ def run_filter(cfg: PipelineConfig) -> Path:
 
 
 def run_masks(cfg: PipelineConfig) -> Path:
+    """Run the ``masks`` stage: cleanup + instance segmentation for each row.
+
+    Args:
+        cfg: Loaded pipeline configuration.
+
+    Returns:
+        Path to ``masked_manifest.jsonl``.
+    """
     stage = _stage_paths(cfg)
     rows = read_jsonl(stage["filtered"])
     masks_dir = ensure_dir(Path(cfg.paths.work_dir) / "masks")
@@ -139,6 +197,14 @@ def run_masks(cfg: PipelineConfig) -> Path:
 
 
 def run_poses(cfg: PipelineConfig) -> Path:
+    """Run the ``poses`` stage (VLM parser pass) and write posed manifest.
+
+    Args:
+        cfg: Loaded pipeline configuration.
+
+    Returns:
+        Path to ``posed_manifest.jsonl``.
+    """
     stage = _stage_paths(cfg)
     rows = read_jsonl(stage["masked"])
     
@@ -159,6 +225,22 @@ def run_poses(cfg: PipelineConfig) -> Path:
     return stage["posed"]
 
 def _run_vlm_parser(record: dict, model_name: str) -> dict:
+    """Invoke the VLM parser on a single record's front view.
+
+    Lazily imports ``parse_constraints`` so the heavy VLM client is not
+    loaded for pipelines that skip the poses stage.
+
+    Args:
+        record: Manifest row with ``views.front`` and optional ``caption``.
+        model_name: VLM model identifier used by the parser client.
+
+    Returns:
+        A shallow copy of ``record`` with ``vlm_schema`` populated from the
+        parsed constraint schema. If the front image is missing, the record
+        is returned unchanged.
+    """
+    from .vlm_3d.parser.client import parse_constraints
+
     updated = dict(record)
     views = updated.get("views", {})
     front_path = Path(str(views.get("front", "")))
@@ -171,6 +253,22 @@ def _run_vlm_parser(record: dict, model_name: str) -> dict:
 
 
 def run_shapes(cfg: PipelineConfig, mode: str, limit: int = 0, patent_id: str | None = None) -> Path:
+    """Run the ``shapes`` stage in either ``art3d`` or ``optimize`` mode.
+
+    Optionally restricts processing to a comma-separated list of patent ids
+    and/or the first ``limit`` rows. In ``art3d`` mode delegates to
+    :func:`_run_shapes_art3d_batched`; in ``optimize`` mode runs the legacy
+    differentiable-render optimization loop with thread-pool parallelism.
+
+    Args:
+        cfg: Loaded pipeline configuration.
+        mode: ``"art3d"`` (Gemini + SF3D) or ``"optimize"`` (legacy).
+        limit: If > 0, process only the first ``limit`` rows.
+        patent_id: Optional comma-separated subset of patent ids to keep.
+
+    Returns:
+        Path to ``shaped_manifest.jsonl``.
+    """
     stage = _stage_paths(cfg)
     rows = read_jsonl(stage["posed"])
     if patent_id:
@@ -228,6 +326,21 @@ def _run_shapes_art3d_batched(
     """Two-phase art3d:
       Phase A — Gemini augment + proxy select per record (no CUDA in main process).
       Phase B — single batched SF3D subprocess that loads the model once.
+
+    Hides the GPU from the parent python so only the SF3D venv subprocess
+    creates a CUDA context. Surface-pattern records are routed through
+    :func:`run_surface_pattern_loop` instead of SF3D.
+
+    Args:
+        cfg: Loaded pipeline configuration.
+        rows: Manifest rows to reconstruct.
+        work_dir: ``<work>/vlm_3d`` directory for intermediates (proxies,
+            meshes, etc.).
+        stage: Mapping of stage names to JSONL paths (from
+            :func:`_stage_paths`).
+
+    Returns:
+        Path to ``shaped_manifest.jsonl``.
     """
     import os as _os
 
@@ -286,6 +399,17 @@ def _run_shapes_art3d_batched(
     return stage["shaped"]
 
 def _run_legacy_vlm_loop(record: dict, cfg: PipelineConfig, work_dir: Path) -> dict:
+    """Run the legacy differentiable-optimization loop for a single record.
+
+    Args:
+        record: Manifest row, expected to contain ``vlm_schema``.
+        cfg: Loaded pipeline configuration.
+        work_dir: Working directory for renders and intermediate artifacts.
+
+    Returns:
+        The optimization result row, or ``record`` unchanged when no
+        ``vlm_schema`` is present.
+    """
     from .vlm_3d.parser.schema import ConstraintSchema
     schema_dict = record.get("vlm_schema")
     if not schema_dict:
@@ -295,6 +419,16 @@ def _run_legacy_vlm_loop(record: dict, cfg: PipelineConfig, work_dir: Path) -> d
     return run_optimization(record, schema, cfg.vlm_3d, work_dir)
 
 def _run_vlm_loop(record: dict, cfg: PipelineConfig, work_dir: Path) -> dict:
+    """Dispatch a record to the surface-pattern or art3d loop based on CPC.
+
+    Args:
+        record: Manifest row (must include a ``cpc`` field).
+        cfg: Loaded pipeline configuration.
+        work_dir: Working directory for intermediate artifacts.
+
+    Returns:
+        The processed row produced by whichever loop ran.
+    """
     print(f"[_run_vlm_loop] Processing record: {record.get('patent_id')}")
     patent_type = route_patent(record.get("cpc", []))
     print(f"[_run_vlm_loop] Routed to: {patent_type}")
@@ -311,6 +445,14 @@ def _run_vlm_loop(record: dict, cfg: PipelineConfig, work_dir: Path) -> dict:
 
 
 def run_package(cfg: PipelineConfig) -> Path:
+    """Run the ``package`` stage: write the final JSONL and optional HF dataset.
+
+    Args:
+        cfg: Loaded pipeline configuration.
+
+    Returns:
+        Path to the final JSONL artifact.
+    """
     stage = _stage_paths(cfg)
     rows = read_jsonl(stage["shaped"])
 
@@ -327,6 +469,12 @@ def run_package(cfg: PipelineConfig) -> Path:
 
 
 def run_all(cfg: PipelineConfig, mode: str) -> None:
+    """Run the full pipeline end-to-end: filter -> masks -> poses -> shapes -> package.
+
+    Args:
+        cfg: Loaded pipeline configuration.
+        mode: Shape-stage mode (``"art3d"`` or ``"optimize"``).
+    """
     run_filter(cfg)
     run_masks(cfg)
     run_poses(cfg)
@@ -335,6 +483,7 @@ def run_all(cfg: PipelineConfig, mode: str) -> None:
 
 
 def run_bootstrap() -> None:
+    """Scaffold a fresh workspace: copy example config and seed the manifest."""
     bootstrap_workspace(
         config_example="configs/pipeline.example.yaml",
         config_target="configs/pipeline.yaml",
@@ -344,11 +493,25 @@ def run_bootstrap() -> None:
 
 
 def run_download_impact(target_dir: str, force: bool) -> None:
+    """Clone the upstream IMPACT repo into ``target_dir``.
+
+    Args:
+        target_dir: Directory under which the ``IMPACT`` clone will live.
+        force: If True, re-clone over any existing directory.
+    """
     repo_dir = clone_impact_repo(target_dir, force=force)
     print(f"[download-impact] cloned IMPACT repo -> {repo_dir}")
 
 
 def run_ingest_impact(csv_path: str, image_root: str, output_manifest: str, max_samples: int) -> None:
+    """Build the raw manifest JSONL from the IMPACT sample CSV.
+
+    Args:
+        csv_path: Path to the IMPACT metadata CSV.
+        image_root: Root directory of per-patent IMPACT image folders.
+        output_manifest: Destination JSONL path.
+        max_samples: Cap on rows to ingest (0 = all).
+    """
     count = build_manifest_from_impact_csv(
         csv_path=csv_path,
         image_root=image_root,
@@ -365,6 +528,15 @@ def run_build_proxy_shape_index(
     clip_model_name: str,
     max_meshes: int,
 ) -> None:
+    """Build the proxy ShapeNet CLIP index from manifest cover images.
+
+    Args:
+        manifest_jsonl: Manifest JSONL whose rows contribute proxy images.
+        output_embeddings_npy: Destination ``.npy`` path for the matrix.
+        output_mesh_index_json: Destination JSON path for the mesh-id list.
+        clip_model_name: Sentence-Transformers model identifier.
+        max_meshes: Cap on entries (0 = all).
+    """
     count = build_proxy_shape_index_from_manifest(
         manifest_jsonl=manifest_jsonl,
         output_embeddings_npy=output_embeddings_npy,
@@ -376,6 +548,11 @@ def run_build_proxy_shape_index(
 
 
 def _build_parser() -> argparse.ArgumentParser:
+    """Construct the ``argparse`` parser for the ``patent_pipeline`` CLI.
+
+    Returns:
+        A configured :class:`argparse.ArgumentParser` instance.
+    """
     parser = argparse.ArgumentParser(description="Patent 2D->3D weak supervision dataset builder")
     parser.add_argument(
         "command",
@@ -449,6 +626,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
+    """Entry point for ``python -m patent_pipeline``: parse args and dispatch."""
     load_dotenv()
     parser = _build_parser()
     args = parser.parse_args()

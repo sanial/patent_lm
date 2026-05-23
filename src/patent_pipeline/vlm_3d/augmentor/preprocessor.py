@@ -5,7 +5,18 @@ import cv2
 import numpy as np
 
 def remove_patent_annotations(img_array: np.ndarray) -> np.ndarray:
-    """Mask out text/annotations before edge extraction."""
+    """Mask out text/annotations from a patent figure before edge extraction.
+
+    Runs EasyOCR on the image, fills the detected text regions (with a
+    morphological dilation to catch nearby leader lines), and inpaints over
+    them via OpenCV's ``INPAINT_TELEA`` algorithm.
+
+    Args:
+        img_array: Input image as a BGR (or grayscale) ``ndarray``.
+
+    Returns:
+        Same-shape image with reference numbers and labels erased.
+    """
     reader = easyocr.Reader(['en'], gpu=True)
     results = reader.readtext(img_array)
     mask = np.zeros(img_array.shape[:2], dtype=np.uint8)

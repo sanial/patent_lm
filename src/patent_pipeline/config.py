@@ -76,6 +76,17 @@ class PipelineConfig:
 
 
 def _load_yaml(path: Path) -> dict[str, Any]:
+    """Parse a YAML file into a dict, validating the top-level type.
+
+    Args:
+        path: Filesystem path to the YAML file.
+
+    Returns:
+        Parsed mapping.
+
+    Raises:
+        ValueError: If the parsed document is not a mapping.
+    """
     with path.open("r", encoding="utf-8") as f:
         data = yaml.safe_load(f)
     if not isinstance(data, dict):
@@ -84,6 +95,14 @@ def _load_yaml(path: Path) -> dict[str, Any]:
 
 
 def load_config(path: str | Path) -> PipelineConfig:
+    """Load and validate a pipeline YAML configuration.
+
+    Args:
+        path: Path to the YAML file (typically ``configs/pipeline.yaml``).
+
+    Returns:
+        A fully-typed :class:`PipelineConfig` populated from the YAML.
+    """
     cfg_path = Path(path)
     raw = _load_yaml(cfg_path)
 
