@@ -18,12 +18,6 @@ python -m src.patent_pipeline.cli shapes --mode art3d --patent-id D0915081
 # → data/work/vlm_3d/reconstructed_meshes/D0915081.glb
 ```
 
-For the full conceptual writeup, see [PIPELINE_OVERVIEW.md](PIPELINE_OVERVIEW.md).
-Companion docs:
-- [WALKTHROUGH.md](WALKTHROUGH.md) — architecture summary
-- [DETAILED.md](DETAILED.md) — chronological engineering log
-- [PROXY_IMAGE_GENERATION.md](PROXY_IMAGE_GENERATION.md) — how the `.png` proxies are produced
-
 ---
 
 ## What it does
@@ -66,9 +60,31 @@ TIF line-art ──► Gemini image-gen ──► proxy_{0..2}.png ──► sel
 The augmentor's role — taking patent line-art as structural conditioning and
 producing a photorealistic image that preserves its contours — is filled by
 `gemini-2.5-flash-image` receiving the figure as a multimodal input alongside a
-text prompt. There is **no real ControlNet** in this pipeline; the docstring
-mentioning it is a historical note. See
-[PROXY_IMAGE_GENERATION.md](PROXY_IMAGE_GENERATION.md) for details.
+text prompt. There is **no real ControlNet** in this pipeline; any docstring
+mentioning it is a historical note.
+
+---
+
+## How proxy images are made
+
+SF3D was trained on photorealistic product photos, not patent line-art, so a
+bridge step turns the drawing into something SF3D can reconstruct:
+
+1. The upstream `poses` stage emits a structured `vlm_schema`
+   (`{category, parts, materials, view, ...}`).
+   [prompt_builder.py](src/patent_pipeline/vlm_3d/augmentor/prompt_builder.py)
+   renders that to a short natural-language description.
+2. [gemini_augmentor.py](src/patent_pipeline/vlm_3d/augmentor/gemini_augmentor.py)
+   sends `[instruction, line_art_PIL_image]` to `gemini-2.5-flash-image` with
+   `response_modalities=["TEXT", "IMAGE"]`, N times (default N=3). Each call
+   yields one PIL image, decoded from the `inline_data` part of the response
+   and saved as `proxy_<i>.png` via `PIL.Image.save`.
+3. [proxy_selector.py](src/patent_pipeline/vlm_3d/augmentor/proxy_selector.py)
+   makes a second call to `gemini-2.5-flash` (text-only) passing the line art
+   and all N candidates, asking for the index of the best one. That path
+   becomes `best_proxy_path`.
+4. Only `best_proxy_path` is fed to SF3D in Phase B; the other candidates are
+   retained so the selector's choice is auditable.
 
 ---
 
@@ -214,9 +230,6 @@ All knobs live in [configs/pipeline.yaml](configs/pipeline.yaml). Notable ones:
 
 ## Known follow-ups
 
-- `_run_vlm_parser` in `cli.py` has a latent reference to `parse_constraints`
-  after a top-level import was removed — re-running `poses` will fail until a
-  lazy import is added inside the function.
 - The VLM **critic** / unified scoring stages are stubs.
 - Full 44-record art3d run with the new batched architecture has not yet been
   executed end-to-end; five patents are individually validated.
